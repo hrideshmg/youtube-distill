@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>youtube-distill</title>
+  <!-- oat 0.8.0, vendored (pre-v1, so pinned deliberately) -->
+  <link rel="stylesheet" href="/oat.min.css">
+  <script src="/oat.min.js" defer></script>
+  <!-- KaTeX 0.19.0, vendored (woff2 fonts only) -->
+  <link rel="stylesheet" href="/katex/katex.min.css">
+  <!-- Not deferred: a cached article can arrive before a deferred script runs. -->
+  <script src="/katex/katex.min.js"></script>
+  <style>
+    main { max-width: 46rem; margin: 0 auto; padding: 2rem 1rem; }
+    nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+    form { display: flex; gap: 0.5rem; }
+    form input { flex: 1; }
+    #status { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem; }
+    #source { margin-top: 1.5rem; }
+    #article { margin-top: 1rem; line-height: 1.7; }
+    #regenerate { margin-top: 2rem; }
+    #article .arithmatex { overflow-x: auto; }
+    #article img { max-width: 100%; border-radius: 0.5rem; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <nav><a href="/">New</a><a href="/history.html">History</a></nav>
+    <h1>youtube-distill</h1>
+    <p class="text-light">Turn an educational YouTube video into a readable article.</p>
+
+    <form id="form">
+      <input id="url" type="url" required placeholder="https://www.youtube.com/watch?v=…">
+      <button id="submit" type="submit">Distill</button>
+    </form>
+
+    <div id="status" role="status" aria-busy="true" hidden><span id="step"></span></div>
+    <div id="error" role="alert" data-variant="error" hidden></div>
+    <p id="source" hidden><a target="_blank" rel="noopener">Watch the original video on YouTube ↗</a></p>
+    <article id="article" hidden></article>
+    <button id="regenerate" class="outline" hidden>Regenerate</button>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    let lastUrl = null;
+
+    $("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      start($("url").value, false);
+    });
+    $("regenerate").addEventListener("click", () => start(lastUrl, true));
+
+    async function start(url, regenerate) {
+      lastUrl = url;
+      $("submit").disabled = true;
+      $("error").hidden = true;
+      $("article").hidden = true;
+      $("source").hidden = true;
+      $("regenerate").hidden = true;
+      $("status").hidden = false;
+      $("step").textContent = "Starting";
+
+      try {
+        const res = await fetch("/api/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, regenerate }),
+        });
+        const body = await res.json();
+        if (!res.ok) return finish(body.detail);
+        history.replaceState(null, "", `/?v=${body.id}`);
+        poll(body.id);
+      } catch (err) {
+        finish(String(err));
+      }
+    }
+
+    async function poll(id) {
+      const job = await (await fetch(`/api/jobs/${id}`)).json();
+      $("step").textContent = job.step + "…";
+      if (job.status === "running") return setTimeout(() => poll(id), 2000);
+      if (job.status === "error") return finish(job.error);
+      $("article").innerHTML = job.article_html;
+      renderMath($("article"));
+      // Regenerated screenshots reuse filenames, so bust the browser cache.
+      for (const img of $("article").querySelectorAll("img")) img.src += `?v=${Date.now()}`;
+      $("article").hidden = false;
+      $("source").querySelector("a").href = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+      $("source").hidden = false;
+      $("regenerate").hidden = false;
+      finish();
+    }
+
+    // Opened from history (or a shared link): show that video's article.
+    const v = new URLSearchParams(location.search).get("v");
+    if (v) {
+      lastUrl = `https://www.youtube.com/watch?v=${v}`;
+      $("url").value = lastUrl;
+      $("submit").disabled = true;
+      $("status").hidden = false;
+      poll(v);
+    }
+
+    // The server wraps each equation (still raw LaTeX) in .arithmatex: a <div>
+    // for display maths, a <span> for inline. Strip the \[ \] / \( \) and typeset.
+    function renderMath(root) {
+      for (const el of root.querySelectorAll(".arithmatex")) {
+        const tex = el.textContent.trim().replace(/^\\[[(]/, "").replace(/\\[\])]$/, "");
+        katex.render(tex, el, { displayMode: el.tagName === "DIV", throwOnError: false });
+      }
+    }
+
+    function finish(error) {
+      $("status").hidden = true;
+      $("submit").disabled = false;
+      if (error) {
+        $("error").textContent = error;
+        $("error").hidden = false;
+      }
+    }
+  </script>
+</body>
+</html>

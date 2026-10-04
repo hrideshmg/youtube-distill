@@ -1,5 +1,5 @@
 {
-  description = "DevShell Template";
+  description = "youtube-distill devshell";
 
   inputs = {
     nixos-config.url = "path:/home/hridesh/nix-config";
@@ -18,14 +18,19 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        python = pkgs.python313;
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            nodejs
+          packages = [
+            python
+            pkgs.uv
+            pkgs.ffmpeg
           ];
 
-          shellHook = "echo hi!";
+          # Make uv use the Nix-provided interpreter instead of downloading its own.
+          UV_PYTHON = "${python}/bin/python";
+          UV_PYTHON_DOWNLOADS = "never";
         };
       }
     );

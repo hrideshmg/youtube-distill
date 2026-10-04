@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>History · youtube-distill</title>
+  <link rel="stylesheet" href="/oat.min.css">
+  <script src="/oat.min.js" defer></script>
+  <style>
+    main { max-width: 46rem; margin: 0 auto; padding: 2rem 1rem; }
+    nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+    td img { width: 96px; border-radius: 0.25rem; display: block; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <nav><a href="/">New</a><a href="/history.html">History</a></nav>
+    <h1>History</h1>
+
+    <p id="empty" class="text-light" hidden>Nothing yet. <a href="/">Distill a video</a> to get started.</p>
+    <table id="table" hidden>
+      <thead><tr><th></th><th>Article</th><th>Status</th><th>Updated</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+
+  <script>
+    const STATUS = { done: ["success", "Done"], running: ["warning", "Running"], error: ["danger", "Failed"] };
+
+    (async () => {
+      const jobs = await (await fetch("/api/jobs")).json();
+      if (!jobs.length) return (document.getElementById("empty").hidden = false);
+
+      const rows = document.getElementById("rows");
+      for (const job of jobs) {
+        const href = `/?v=${encodeURIComponent(job.id)}`;
+        const [variant, label] = STATUS[job.status];
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><a href="${href}"><img alt="" loading="lazy"></a></td>
+          <td><a href="${href}"></a></td>
+          <td><span class="badge" data-variant="${variant}">${label}</span></td>
+          <td class="text-light"></td>`;
+        // Thumbnail straight from YouTube's image CDN; no need to store it.
+        tr.querySelector("img").src = `https://i.ytimg.com/vi/${encodeURIComponent(job.id)}/mqdefault.jpg`;
+        // textContent, not innerHTML: titles come from LLM output.
+        tr.querySelector("td:nth-child(2) a").textContent = job.title || job.id;
+        tr.querySelector("td:last-child").textContent = new Date(job.updated_at + "Z").toLocaleString();
+        rows.append(tr);
+      }
+      document.getElementById("table").hidden = false;
+    })();
+  </script>
+</body>
+</html>
