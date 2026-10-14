@@ -8,5 +8,5 @@ dependencies = [
     "openai>=3.24.0",
     "pymdown-extensions>=12.1",
     "uvicorn[standard]>=0.54.0",
-    "yt-dlp>=2026.8.19",
+    "yt-dlp[default]>=2026.8.19",
 ]
