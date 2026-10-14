@@ -31,6 +31,10 @@ YDL_BASE = {"quiet": True, "no_warnings": True, "noprogress": True}
 # YouTube cookies, which avoids 429s on subtitle downloads.
 if browser := os.environ.get("YT_COOKIES_BROWSER"):
     YDL_BASE["cookiesfrombrowser"] = (browser,)
+# NOTE: for headless servers with no browser, e.g. YT_COOKIES_FILE=/path/to/cookies.txt
+# (Netscape format). yt-dlp may rewrite this file, so it must be writable.
+if cookie_file := os.environ.get("YT_COOKIES_FILE"):
+    YDL_BASE["cookiefile"] = cookie_file
 
 client = AsyncOpenAI()
 
