@@ -27,6 +27,10 @@ FIGURE_RE = re.compile(r"^\[\[FIGURE (\d{1,2}(?::\d{2}){1,2}) \| (.+?)\]\][ \t]*
 CUE_TIME_RE = re.compile(r"(\d+):(\d{2}):(\d{2})\.\d{3} -->")
 
 YDL_BASE = {"quiet": True, "no_warnings": True, "noprogress": True}
+# NOTE: optional, e.g. YT_COOKIES_BROWSER=chromium. Uses that browser's logged-in
+# YouTube cookies, which avoids 429s on subtitle downloads.
+if browser := os.environ.get("YT_COOKIES_BROWSER"):
+    YDL_BASE["cookiesfrombrowser"] = (browser,)
 
 client = AsyncOpenAI()
 
@@ -38,6 +42,11 @@ class PipelineError(Exception):
 # ---------- captions ----------
 
 
+def fetch_info(url: str) -> dict:
+    with yt_dlp.YoutubeDL(YDL_BASE) as ydl:
+        return ydl.extract_info(url, download=False)
+
+
 def fetch_info_and_captions(url: str, job_dir: Path) -> tuple[dict, list[tuple[float, str]]]:
     """Return yt-dlp info dict and caption lines as (start_seconds, text).
 
@@ -45,8 +54,7 @@ def fetch_info_and_captions(url: str, job_dir: Path) -> tuple[dict, list[tuple[f
     """
     # NOTE: English-only for now. Non-English videos fall back to YouTube's
     # auto-translated track if one exists.
-    with yt_dlp.YoutubeDL(YDL_BASE) as ydl:
-        info = ydl.extract_info(url, download=False)
+    info = fetch_info(url)
 
     manual = _pick_lang(info.get("subtitles") or {})
     auto = None if manual else _pick_lang(info.get("automatic_captions") or {})
@@ -302,8 +310,8 @@ async def resolve_figures(article: str, url: str, job_dir: Path, url_prefix: str
 # ---------- entry point ----------
 
 
-async def run(url: str, job_dir: Path, url_prefix: str, step: Callable[[str], None] = print) -> str:
-    """Run the full pipeline and return the article as Markdown."""
+async def run(url: str, job_dir: Path, url_prefix: str, step: Callable[[str], None] = print) -> tuple[str, dict]:
+    """Run the full pipeline and return the article as Markdown plus the yt-dlp info dict."""
     job_dir.mkdir(parents=True, exist_ok=True)
 
     step("Fetching captions")
@@ -314,7 +322,7 @@ async def run(url: str, job_dir: Path, url_prefix: str, step: Callable[[str], No
 
     article = await resolve_figures(article, url, job_dir, url_prefix, step)
     (job_dir / "article.md").write_text(article)
-    return article
+    return article, info
 
 
 if __name__ == "__main__":

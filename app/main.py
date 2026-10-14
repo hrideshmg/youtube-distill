@@ -26,10 +26,17 @@ db.execute("""
         step       TEXT,
         error      TEXT,
         markdown   TEXT,
+        title      TEXT,  -- original YouTube title
+        thumbnail  TEXT,  -- thumbnail URL
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
 """)
+# Databases created before title/thumbnail existed. Their rows get backfilled lazily in get_job.
+_cols = {r["name"] for r in db.execute("PRAGMA table_info(jobs)")}
+for _col in ("title", "thumbnail"):
+    if _col not in _cols:
+        db.execute(f"ALTER TABLE jobs ADD COLUMN {_col} TEXT")
 # Anything still "running" was killed by a restart; mark it so it can be retried.
 db.execute("UPDATE jobs SET status = 'error', error = 'Interrupted by server restart' WHERE status = 'running'")
 
@@ -116,10 +123,24 @@ async def get_job(video_id: str):
     if not row:
         raise HTTPException(404, "Unknown job")
     md = row["markdown"]
+    title, thumbnail = row["title"], row["thumbnail"]
+    if row["status"] == "done" and not title:
+        # Article generated before we stored video metadata: fetch it once.
+        # Best-effort, so a network failure doesn't block reading the article.
+        try:
+            info = await asyncio.to_thread(pipeline.fetch_info, f"https://www.youtube.com/watch?v={video_id}")
+            title, thumbnail = info.get("title"), info.get("thumbnail")
+            db.execute(
+                "UPDATE jobs SET title = ?, thumbnail = ? WHERE video_id = ?", (title, thumbnail, video_id)
+            )
+        except Exception:
+            pass
     return {
         "status": row["status"],
         "step": row["step"],
         "error": row["error"],
+        "title": title,
+        "thumbnail": thumbnail,
         # NOTE: rendered HTML is inserted as-is by the page. It's our own LLM
         # output, but raw HTML in it isn't sanitised — fine for local use.
         "article_html": render_markdown(md) if md else None,
@@ -130,8 +151,12 @@ async def _run(video_id: str):
     # Canonical URL so yt-dlp never treats a &list= URL as a playlist.
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
-        md = await pipeline.run(url, JOBS_DIR / video_id, f"/files/{video_id}", lambda s: update_job(video_id, step=s))
-        update_job(video_id, status="done", markdown=md)
+        md, info = await pipeline.run(
+            url, JOBS_DIR / video_id, f"/files/{video_id}", lambda s: update_job(video_id, step=s)
+        )
+        update_job(
+            video_id, status="done", markdown=md, title=info.get("title"), thumbnail=info.get("thumbnail")
+        )
     except Exception as e:
         update_job(video_id, status="error", error=str(e) or type(e).__name__)
 
