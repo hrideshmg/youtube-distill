@@ -74,7 +74,7 @@
     <div id="error" role="alert" data-variant="error" hidden></div>
     <a id="video" target="_blank" rel="noopener" hidden>
       <img alt="">
-      <span><span class="label">Original video on YouTube ↗</span><strong></strong></span>
+      <span><span class="label">Original video on YouTube ↗</span><strong></strong><span id="read-time" class="label"></span></span>
     </a>
     <aside id="toc" aria-label="Table of contents" hidden></aside>
     <article id="article" hidden></article>
@@ -134,6 +134,7 @@
       thumb.hidden = !job.thumbnail;
       if (job.thumbnail) thumb.src = job.thumbnail;
       $("video").hidden = false;
+      $("read-time").textContent = readTime($("article"));
       buildToc();
       $("regenerate").hidden = false;
       finish();
@@ -156,6 +157,14 @@
         const tex = el.textContent.trim().replace(/^\\[[(]/, "").replace(/\\[\])]$/, "");
         katex.render(tex, el, { displayMode: el.tagName === "DIV", throwOnError: false });
       }
+    }
+
+    // ~200 words per minute; equations are skipped rather than counted as words.
+    function readTime(root) {
+      const copy = root.cloneNode(true);
+      copy.querySelectorAll(".arithmatex").forEach((el) => el.remove());
+      const words = (copy.textContent.match(/\S+/g) || []).length;
+      return `~${Math.max(1, Math.round(words / 200))} min read`;
     }
 
     let tocHeadings = [];
