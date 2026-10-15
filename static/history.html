@@ -11,12 +11,14 @@
     main { max-width: 46rem; margin: 0 auto; padding: 2rem 1rem; }
     nav { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
     td img { width: 96px; border-radius: 0.25rem; display: block; }
+    #theme-toggle { margin-left: auto; padding: 0.2rem 0.55rem; background: none; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 0.5rem; box-shadow: none; color: inherit; opacity: 0.85; font-size: 1.1rem; line-height: 1; cursor: pointer; }
+    #theme-toggle:hover, #theme-toggle:focus-visible { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
     [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <main>
-    <nav><a href="/">New</a><a href="/history.html">History</a><button id="theme-toggle" type="button" class="outline" style="margin-left:auto"></button></nav>
+    <nav><a href="/">New</a><a href="/history.html">History</a><button id="theme-toggle" type="button"></button></nav>
     <h1>History</h1>
 
     <p id="empty" class="text-light" hidden>Nothing yet. <a href="/">Distill a video</a> to get started.</p>

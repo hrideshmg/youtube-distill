@@ -54,12 +54,14 @@
     #regenerate { margin-top: 2rem; }
     #article .arithmatex { overflow-x: auto; }
     #article img { max-width: 100%; border-radius: 0.5rem; }
+    #theme-toggle { margin-left: auto; padding: 0.2rem 0.55rem; background: none; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 0.5rem; box-shadow: none; color: inherit; opacity: 0.85; font-size: 1.1rem; line-height: 1; cursor: pointer; }
+    #theme-toggle:hover, #theme-toggle:focus-visible { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
     [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <main>
-    <nav><a href="/">New</a><a href="/history.html">History</a><button id="theme-toggle" type="button" class="outline" style="margin-left:auto"></button></nav>
+    <nav><a href="/">New</a><a href="/history.html">History</a><button id="theme-toggle" type="button"></button></nav>
     <h1>youtube-distill</h1>
     <p class="text-light">Turn an educational YouTube video into a readable article.</p>
 

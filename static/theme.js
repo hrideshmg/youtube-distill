@@ -11,7 +11,10 @@
   function apply(theme) {
     root.style.colorScheme = theme;
     var button = document.getElementById('theme-toggle');
-    if (button) button.textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+    if (button) {
+      button.textContent = theme === 'dark' ? '☀' : '☾';
+      button.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    }
   }
 
   // Runs before first paint (script is not deferred) to avoid a flash.
