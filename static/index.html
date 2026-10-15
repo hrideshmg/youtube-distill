@@ -196,7 +196,15 @@
       let current = 0;
       tocHeadings.forEach((h, i) => { if (h.getBoundingClientRect().top <= 100) current = i; });
       tocLinks.forEach((a, i) => a.classList.toggle("active", i === current));
-      tocLinks[current].scrollIntoView({ block: "nearest" });
+      // Only keep the active link visible when the TOC is the fixed sidebar. On mobile it sits in
+      // the page flow, and scrollIntoView would yank the whole page back up to it on every scroll.
+      const toc = $("toc");
+      if (getComputedStyle(toc).position === "fixed") {
+        const link = tocLinks[current];
+        if (link.offsetTop < toc.scrollTop) toc.scrollTop = link.offsetTop;
+        else if (link.offsetTop + link.offsetHeight > toc.scrollTop + toc.clientHeight)
+          toc.scrollTop = link.offsetTop + link.offsetHeight - toc.clientHeight;
+      }
     }
 
     let tocTicking = false;
