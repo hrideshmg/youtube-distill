@@ -4,18 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>History · youtube-distill</title>
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/oat.min.css">
   <script src="/oat.min.js" defer></script>
   <style>
     main { max-width: 46rem; margin: 0 auto; padding: 2rem 1rem; }
-    nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+    nav { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
     td img { width: 96px; border-radius: 0.25rem; display: block; }
     [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <main>
-    <nav><a href="/">New</a><a href="/history.html">History</a></nav>
+    <nav><a href="/">New</a><a href="/history.html">History</a><button id="theme-toggle" type="button" class="outline" style="margin-left:auto"></button></nav>
     <h1>History</h1>
 
     <p id="empty" class="text-light" hidden>Nothing yet. <a href="/">Distill a video</a> to get started.</p>

@@ -15,6 +15,7 @@
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
   <!-- oat 0.8.0, vendored (pre-v1, so pinned deliberately) -->
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/oat.min.css">
   <script src="/oat.min.js" defer></script>
   <!-- KaTeX 0.19.0, vendored (woff2 fonts only) -->
@@ -24,7 +25,7 @@
   <script defer src="https://cloud.umami.is/script.js" data-website-id="e0309800-0161-44e6-9061-f9743ce0f5fc"></script>
   <style>
     main { max-width: 46rem; margin: 0 auto; padding: 2rem 1rem; }
-    nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+    nav { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
     form { display: flex; gap: 0.5rem; }
     form input { flex: 1; }
     #status { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem; }
@@ -58,7 +59,7 @@
 </head>
 <body>
   <main>
-    <nav><a href="/">New</a><a href="/history.html">History</a></nav>
+    <nav><a href="/">New</a><a href="/history.html">History</a><button id="theme-toggle" type="button" class="outline" style="margin-left:auto"></button></nav>
     <h1>youtube-distill</h1>
     <p class="text-light">Turn an educational YouTube video into a readable article.</p>
 
