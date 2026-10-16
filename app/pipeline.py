@@ -63,7 +63,14 @@ def fetch_info_and_captions(url: str, job_dir: Path) -> tuple[dict, list[tuple[f
     manual = _pick_lang(info.get("subtitles") or {})
     auto = None if manual else _pick_lang(info.get("automatic_captions") or {})
     if not (manual or auto):
-        raise PipelineError("This video has no English captions.")
+        others = sorted({*(info.get("subtitles") or {}), *(info.get("automatic_captions") or {})})
+        if others:
+            raise PipelineError(f"This video has no English captions (available: {', '.join(others[:5])}).")
+        # NOTE: YouTube also returns zero tracks when it throttles the server's IP
+        # (403s / missing PO token), so an empty list isn't proof the video has none.
+        raise PipelineError(
+            "YouTube returned no caption tracks. The video may have none, or YouTube may be blocking this server."
+        )
 
     # Let yt-dlp download the track itself: auto-captions are served as an HLS
     # playlist of VTT segments, not a single file.
