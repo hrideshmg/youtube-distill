@@ -197,7 +197,7 @@ The transcript is captions only; you cannot see the screen. Instead you get a li
 [[FIGURE F3 | caption]]
 
 - Use only IDs from the list, each at most once. Place a figure where the transcript discusses it; its timestamp tells you where that is.
-- Good explanations lean on visuals: use a figure wherever it makes the explanation clearer. You don't have to use them all.
+- This is an article, not a slideshow. Use a figure only when it shows something words can't carry as well (a diagram's structure, a chart's shape, a code listing, a worked derivation) and the surrounding text relies on it. Most of the list should go unused; a typical article needs only a handful of figures. Never use a figure for code or equations that you already reproduce in the text, and never use two figures that show the same thing.
 - The caption is one short sentence stating the point the figure makes (e.g. "Each layer's activations are computed from the previous layer's."). It must not claim anything beyond what the figure's description says it shows.
 - In the text around each figure, tell the reader what to notice in it.
 - You only know a figure through its description. When it shows details the transcript doesn't give (exact code, numbers, formulas, labels), never invent or approximate them: refer the reader to the figure instead.
@@ -273,7 +273,9 @@ SELECT_INSTRUCTIONS = """\
 You choose screenshots for an educational article written from a video.
 You get contact sheets ("boards") of frames sampled every 10-15 seconds, in time order: left to right, top to bottom, board after board. Each frame's timestamp is printed in its top-left corner.
 
-Pick one frame for each distinct visual state: a slide, a code listing, a diagram, a chart, what is written on a board, a step of a demo or animation.
+Pick frames whose value is visual, which a reader would genuinely want to see: diagrams, charts, code listings, tables, worked derivations or examples on a board, key steps of a demo or animation.
+- Skip slides that are only text (titles, bullet points, definitions): the article states those in words.
+- Pick each distinct visual once. When the same diagram or listing stays on screen across many slides that differ only in their text, it is one visual: pick a single frame of it.
 - When the same content stays on screen across several frames (even as annotations are added, bullets build up, or a board fills in), pick only the frame where it is most complete, normally the last one before it changes.
 - A slide counts as new content when its text changes, even if its title and layout stay the same.
 - Prefer a frame where the content is unobstructed over a later one where a person blocks part of it.
