@@ -35,6 +35,11 @@ if browser := os.environ.get("YT_COOKIES_BROWSER"):
 # (Netscape format). yt-dlp may rewrite this file, so it must be writable.
 if cookie_file := os.environ.get("YT_COOKIES_FILE"):
     YDL_BASE["cookiefile"] = cookie_file
+# NOTE: optional path to a bgutil-ytdlp-pot-provider checkout's server/ dir. The plugin
+# generates PO tokens with deno/node; without them, YouTube withholds web-client
+# captions on flagged IPs. Only needed when the checkout isn't in ~ of the user running the app.
+if pot_home := os.environ.get("BGUTIL_SERVER_HOME"):
+    YDL_BASE["extractor_args"] = {"youtubepot-bgutilscript": {"server_home": [pot_home]}}
 
 client = AsyncOpenAI()
 

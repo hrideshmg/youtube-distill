@@ -21,3 +21,14 @@ If YouTube answers "Sign in to confirm you're not a bot" (common on server IPs),
 
 - `YT_COOKIES_BROWSER=firefox` reads cookies from a local browser profile.
 - `YT_COOKIES_FILE=/path/to/cookies.txt` uses a Netscape-format cookies file, for headless servers. The file must be writable.
+
+### PO tokens
+
+On a flagged server IP, YouTube may still withhold captions ("YouTube returned no caption tracks"), because its web client needs a PO token for subtitles. The [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider) plugin is a dependency. To give it something to run, clone its provider (script mode) and install it with deno, which must be on `PATH`:
+
+```sh
+git clone --single-branch --branch 2.0.2 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git ~/bgutil-ytdlp-pot-provider
+cd ~/bgutil-ytdlp-pot-provider/server && deno install --allow-scripts=npm:canvas --frozen
+```
+
+If the app runs as a different user than the one whose home holds the checkout, set `BGUTIL_SERVER_HOME=/path/to/bgutil-ytdlp-pot-provider/server`.

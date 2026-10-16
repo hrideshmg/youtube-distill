@@ -3,6 +3,7 @@ name = "youtube-distill"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "bgutil-ytdlp-pot-provider>=2.0.2",
     "fastapi>=0.142.2",
     "markdown>=3.11",
     "openai>=3.24.0",
