@@ -1,4 +1,4 @@
-"""YouTube URL -> captions -> article (pass 1) -> frames -> figure selection (pass 2)."""
+"""YouTube URL -> captions + video -> screenshot selection from frame boards -> article that places the screenshots."""
 
 import asyncio
 import base64
@@ -17,13 +17,13 @@ from pydantic import BaseModel
 
 MODEL = os.environ.get("OPENAI_MODEL", "gpt-6-luna")
 
-# Frame window around a figure timestamp. Skewed forward because speakers
-# usually say "look at this" before the visual is finished.
-WINDOW_BEFORE = 10
-WINDOW_AFTER = 20
-MAX_CANDIDATES = 8
+# Screenshot boards: one frame every BOARD_INTERVAL seconds, tiled BOARD_GRID per
+# image with its timestamp burned in, so the model can compare frames side by side.
+BOARD_INTERVAL = 12
+BOARD_GRID = "3x3"
+BOARD_TILE_WIDTH = 640
 
-FIGURE_RE = re.compile(r"^\[\[FIGURE (\d{1,2}(?::\d{2}){1,2}) \| (.+?)\]\][ \t]*$", re.MULTILINE)
+FIGURE_RE = re.compile(r"^\[\[FIGURE F(\d+) \| (.+?)\]\][ \t]*$", re.MULTILINE)
 CUE_TIME_RE = re.compile(r"(\d+):(\d{2}):(\d{2})\.\d{3} -->")
 
 YDL_BASE = {"quiet": True, "no_warnings": True, "noprogress": True}
@@ -150,10 +150,11 @@ def fmt_ts(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
-def parse_ts(ts: str) -> int:
-    total = 0
+def parse_ts(ts: str) -> float:
+    """Parse [H:]MM:SS[.mmm] into seconds."""
+    total = 0.0
     for part in ts.split(":"):
-        total = total * 60 + int(part)
+        total = total * 60 + float(part)
     return total
 
 
@@ -191,34 +192,40 @@ Style and format (Markdown):
 - End with a conclusion that ties the pieces back into one coherent mental model, rather than a list of bullet points.
 
 Figures:
-The transcript is captions only; you cannot see the screen. When the transcript indicates that something on screen helps understanding (a diagram, chart, slide, code listing, equation, animation or demo), insert a placeholder on its own line:
+The transcript is captions only; you cannot see the screen. Instead you get a list of available figures: screenshots of what was on screen, each with an ID, the time it was taken and a short description of what it shows. To use one, put it on its own line:
 
-[[FIGURE MM:SS | short description of what should be visible]]
+[[FIGURE F3 | caption]]
 
-Use the timestamp where that visual is being discussed. Good explanations lean on visuals: add a figure wherever one would make the explanation clearer, but never for a person talking. In the text around each figure, tell the reader what to notice in it.
+- Use only IDs from the list, each at most once. Place a figure where the transcript discusses it; its timestamp tells you where that is.
+- Good explanations lean on visuals: use a figure wherever it makes the explanation clearer. You don't have to use them all.
+- The caption is one short sentence stating the point the figure makes (e.g. "Each layer's activations are computed from the previous layer's."). It must not claim anything beyond what the figure's description says it shows.
+- In the text around each figure, tell the reader what to notice in it.
+- You only know a figure through its description. When it shows details the transcript doesn't give (exact code, numbers, formulas, labels), never invent or approximate them: refer the reader to the figure instead.
+- If the list is empty, use no figures.
 """
 
 
-async def write_article(info: dict, transcript: str) -> str:
+async def write_article(info: dict, transcript: str, figures: list[tuple[float, str]]) -> str:
     chapters = info.get("chapters") or []
     chapter_text = "\n".join(f"[{fmt_ts(c['start_time'])}] {c['title']}" for c in chapters)
+    figure_text = "\n".join(f"[F{i + 1}] {fmt_ts(t)} {shows}" for i, (t, shows) in enumerate(figures)) or "(none)"
     prompt = (
         f"Video title: {info.get('title')}\n"
         f"Channel: {info.get('channel')}\n"
         + (f"\nChapters (author-provided, use as structural hints):\n{chapter_text}\n" if chapters else "")
+        + f"\nAvailable figures:\n{figure_text}\n"
         + f"\nTranscript:\n{transcript}"
     )
     resp = await client.responses.create(model=MODEL, instructions=ARTICLE_INSTRUCTIONS, input=prompt)
     return resp.output_text
 
 
-# ---------- frames ----------
+# ---------- screenshots ----------
 
 
 def download_video(url: str, job_dir: Path) -> Path:
-    # NOTE: downloads the whole video (≤720p, video-only) even though we only
-    # need a few short windows. Simple and reliable; yt-dlp's download_ranges
-    # could cut this down if disk/bandwidth becomes a problem.
+    # NOTE: downloads the whole video (≤720p, video-only). Boards only decode its
+    # keyframes, but yt-dlp can't fetch just those.
     opts = {
         **YDL_BASE,
         "format": "bv*[height<=720]/b[height<=720]/bv*/b",
@@ -229,97 +236,105 @@ def download_video(url: str, job_dir: Path) -> Path:
         return Path(ydl.prepare_filename(info))
 
 
-async def extract_candidates(video: Path, at: int, out_dir: Path) -> list[Path]:
-    """Sample 1 fps around `at`, dropping near-duplicate frames via mpdecimate."""
+async def make_boards(video: Path, out_dir: Path) -> list[Path]:
+    """Tile one frame every BOARD_INTERVAL seconds into boards, each frame stamped with its timestamp."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    start = max(0, at - WINDOW_BEFORE)
+    tile_h = BOARD_TILE_WIDTH * 9 // 16
+    # Keep a frame once BOARD_INTERVAL has passed since the last kept one, so the
+    # stamped time is the frame's real time (fps= would print a nominal one).
+    vf = (
+        f"select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{BOARD_INTERVAL})',"
+        f"scale={BOARD_TILE_WIDTH}:{tile_h},"
+        f"drawtext=text='%{{pts\\:hms}}':x=6:y=6:fontsize={BOARD_TILE_WIDTH // 20}"
+        ":fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=5,"
+        f"tile={BOARD_GRID}:padding=8:margin=8:color=white"
+    )
+    # NOTE: -skip_frame nokey decodes only keyframes (YouTube puts one every ~5-6 s),
+    # ~9x cheaper than a full decode on a small box. Spacing can stretch to ~15 s.
     proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-loglevel", "error", "-y",
-        "-ss", str(start), "-i", str(video), "-t", str(WINDOW_BEFORE + WINDOW_AFTER),
-        "-vf", "fps=1,mpdecimate", "-fps_mode", "vfr", "-q:v", "3",
-        str(out_dir / "%02d.jpg"),
+        "ffmpeg", "-loglevel", "error", "-y", "-skip_frame", "nokey", "-i", str(video),
+        "-vf", vf, "-fps_mode", "vfr", "-q:v", "3", str(out_dir / "board_%03d.jpg"),
     )  # fmt: skip
     if await proc.wait() != 0:
         return []
-    frames = sorted(out_dir.glob("*.jpg"))
-    if len(frames) > MAX_CANDIDATES:
-        # Evenly subsample when the scene keeps changing (e.g. speaker in frame).
-        step = len(frames) / MAX_CANDIDATES
-        frames = [frames[int(i * step)] for i in range(MAX_CANDIDATES)]
-    return frames
+    return sorted(out_dir.glob("board_*.jpg"))
 
 
-# ---------- pass 2: figure selection ----------
+class Pick(BaseModel):
+    timestamp: str
+    shows: str
 
 
-class FigureChoice(BaseModel):
-    keep: bool
-    frame_index: int
-    caption: str
+class Selection(BaseModel):
+    picks: list[Pick]
 
 
-FIGURE_INSTRUCTIONS = """\
-You are choosing a screenshot for an educational article written from a video.
-You will get a description of the figure the article needs, followed by numbered frames sampled in time order around that moment.
+SELECT_INSTRUCTIONS = """\
+You choose screenshots for an educational article written from a video.
+You get contact sheets ("boards") of frames sampled every 10-15 seconds, in time order: left to right, top to bottom, board after board. Each frame's timestamp is printed in its top-left corner.
 
-Pick the single frame that best shows the described content:
-- Prefer the most complete version (e.g. a fully drawn diagram, a fully typed code listing).
-- Prefer legible, sharp frames; avoid transitions, motion blur, or overlays covering the content.
-- If no frame clearly shows it (e.g. only a person talking, or unrelated content), set keep=false.
+Pick one frame for each distinct visual state: a slide, a code listing, a diagram, a chart, what is written on a board, a step of a demo or animation.
+- When the same content stays on screen across several frames (even as annotations are added, bullets build up, or a board fills in), pick only the frame where it is most complete, normally the last one before it changes.
+- A slide counts as new content when its text changes, even if its title and layout stay the same.
+- Prefer a frame where the content is unobstructed over a later one where a person blocks part of it.
+- Skip frames with nothing to read or see beyond a person talking: talking heads, logos, title cards without content, credits, transitions.
 
-The caption is one short sentence stating the point the figure makes (e.g. "Each layer's activations are computed from the previous layer's."), not just a description of what is visible.
+For each pick, return the timestamp exactly as printed, and in `shows` describe what the frame shows precisely enough for a writer who can't see it to decide where it belongs (topic, kind of visual, key labels or values).
 """
 
 
-async def choose_frame(description: str, frames: list[Path]) -> FigureChoice | None:
-    content: list[dict] = [{"type": "input_text", "text": f"Figure needed: {description}"}]
-    for i, frame in enumerate(frames):
-        b64 = base64.b64encode(frame.read_bytes()).decode()
-        content.append({"type": "input_text", "text": f"Frame {i}:"})
-        # NOTE: "low" detail keeps this cheap; bump to "high" if it starts
-        # rejecting frames with small text it can't read.
-        content.append({"type": "input_image", "image_url": f"data:image/jpeg;base64,{b64}", "detail": "low"})
+async def select_frames(boards: list[Path]) -> list[tuple[float, str]]:
+    """Return (seconds, description) for each frame worth using as a figure, in time order."""
+    content: list[dict] = []
+    for i, board in enumerate(boards):
+        b64 = base64.b64encode(board.read_bytes()).decode()
+        content.append({"type": "input_text", "text": f"Board {i + 1}:"})
+        content.append({"type": "input_image", "image_url": f"data:image/jpeg;base64,{b64}", "detail": "high"})
+    # NOTE: one call sees every board, so it can dedupe across board boundaries.
+    # Very long videos might do better split into overlapping chunks.
     resp = await client.responses.parse(
         model=MODEL,
-        instructions=FIGURE_INSTRUCTIONS,
+        instructions=SELECT_INSTRUCTIONS,
         input=[{"role": "user", "content": content}],
-        text_format=FigureChoice,
+        text_format=Selection,
     )
-    choice = resp.output_parsed
-    if not choice or not choice.keep or not 0 <= choice.frame_index < len(frames):
-        return None
-    return choice
+    picks = []
+    for pick in resp.output_parsed.picks if resp.output_parsed else []:
+        try:
+            picks.append((parse_ts(pick.timestamp), pick.shows))
+        except ValueError:
+            continue  # mistyped timestamp
+    return sorted(picks)
 
 
-async def resolve_figures(article: str, url: str, job_dir: Path, url_prefix: str, step: Callable[[str], None]) -> str:
-    figures = list(FIGURE_RE.finditer(article))
-    if not figures:
-        return article
+async def extract_frame(video: Path, at: float, out: Path) -> bool:
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-loglevel", "error", "-y", "-ss", f"{at:.3f}", "-i", str(video),
+        "-frames:v", "1", "-q:v", "3", str(out),
+    )  # fmt: skip
+    return await proc.wait() == 0 and out.exists()
 
-    step("Downloading video for screenshots")
-    video = await asyncio.to_thread(download_video, url, job_dir)
 
-    step(f"Selecting screenshots for {len(figures)} figures")
-    sem = asyncio.Semaphore(4)
+async def insert_figures(
+    article: str, figures: list[tuple[float, str]], video: Path, job_dir: Path, url_prefix: str
+) -> str:
+    matches = list(FIGURE_RE.finditer(article))
 
     async def resolve(n: int, m: re.Match) -> str:
-        async with sem:
-            frames = await extract_candidates(video, parse_ts(m.group(1)), job_dir / "candidates" / str(n))
-            choice = await choose_frame(m.group(2), frames) if frames else None
-        if not choice:
-            return ""
+        idx = int(m.group(1)) - 1
+        if not 0 <= idx < len(figures):
+            return ""  # ID not in the list
         name = f"fig_{n}.jpg"
-        shutil.copy(frames[choice.frame_index], job_dir / name)
-        return f"![{choice.caption}]({url_prefix}/{name})\n\n*{choice.caption}*\n"
+        if not await extract_frame(video, figures[idx][0], job_dir / name):
+            return ""
+        caption = m.group(2)
+        return f"![{caption}]({url_prefix}/{name})\n\n*{caption}*\n"
 
-    replacements = await asyncio.gather(*(resolve(n, m) for n, m in enumerate(figures)))
+    replacements = await asyncio.gather(*(resolve(n, m) for n, m in enumerate(matches)))
 
     # Splice replacements back in from the end so earlier offsets stay valid.
-    for m, rep in zip(reversed(figures), reversed(replacements)):
+    for m, rep in zip(reversed(matches), reversed(replacements)):
         article = article[: m.start()] + rep + article[m.end() :]
-
-    video.unlink(missing_ok=True)
-    shutil.rmtree(job_dir / "candidates", ignore_errors=True)
     return article
 
 
@@ -333,10 +348,22 @@ async def run(url: str, job_dir: Path, url_prefix: str, step: Callable[[str], No
     step("Fetching captions")
     info, lines = await asyncio.to_thread(fetch_info_and_captions, url, job_dir)
 
-    step("Writing article")
-    article = await write_article(info, format_transcript(lines))
+    # NOTE: download runs after captions, not in parallel, so a video without
+    # captions fails fast and we don't double the YouTube requests from a flagged IP.
+    step("Downloading video for screenshots")
+    video = await asyncio.to_thread(download_video, url, job_dir)
+    try:
+        step("Selecting screenshots")
+        boards = await make_boards(video, job_dir / "boards")
+        figures = await select_frames(boards) if boards else []
 
-    article = await resolve_figures(article, url, job_dir, url_prefix, step)
+        step("Writing article")
+        article = await write_article(info, format_transcript(lines), figures)
+        article = await insert_figures(article, figures, video, job_dir, url_prefix)
+    finally:
+        video.unlink(missing_ok=True)
+        shutil.rmtree(job_dir / "boards", ignore_errors=True)
+
     (job_dir / "article.md").write_text(article)
     return article, info
 
