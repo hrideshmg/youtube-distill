@@ -104,13 +104,13 @@ async def create_job(req: JobRequest):
 
 @app.get("/api/jobs")
 async def list_jobs():
-    rows = db.execute("SELECT video_id, status, markdown, updated_at FROM jobs ORDER BY updated_at DESC").fetchall()
+    rows = db.execute("SELECT video_id, status, title, markdown, updated_at FROM jobs ORDER BY updated_at DESC").fetchall()
     return [
         {
             "id": r["video_id"],
             "status": r["status"],
-            # Title comes from the article's first "# " heading; no column for it.
-            "title": (m.group(1) if (m := re.match(r"#\s+(.+)", r["markdown"] or "")) else None),
+            # Original YouTube title; rows not yet backfilled fall back to the generated heading.
+            "title": r["title"] or (m.group(1) if (m := re.match(r"#\s+(.+)", r["markdown"] or "")) else None),
             "updated_at": r["updated_at"],
         }
         for r in rows

@@ -47,7 +47,7 @@
           <td class="text-light"></td>`;
         // Thumbnail straight from YouTube's image CDN; no need to store it.
         tr.querySelector("img").src = `https://i.ytimg.com/vi/${encodeURIComponent(job.id)}/mqdefault.jpg`;
-        // textContent, not innerHTML: titles come from LLM output.
+        // textContent, not innerHTML: titles are untrusted text.
         tr.querySelector("td:nth-child(2) a").textContent = job.title || job.id;
         tr.querySelector("td:last-child").textContent = new Date(job.updated_at + "Z").toLocaleString();
         rows.append(tr);
